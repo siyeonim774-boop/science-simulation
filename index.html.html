@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>전자기 유도 실험 시뮬레이터</title>
+    <!-- Chart.js 실시간 그래프 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; }
+        body { background-color: #f1f5f9; color: #1e293b; padding: 20px; }
+        h1 { text-align: center; margin-bottom: 20px; color: #0f172a; font-size: 1.8rem; }
+        
+        .container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1250px; margin: 0 auto; }
+        .card { background: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); padding: 20px; display: flex; flex-direction: column; }
+        .card h2 { font-size: 1.15rem; margin-bottom: 15px; color: #1e293b; border-bottom: 3px solid #3b82f6; padding-bottom: 6px; }
+        
+        /* 2D 시뮬레이션 영역 */
+        #simCanvas { border: 1px solid #cbd5e1; border-radius: 8px; background-color: #f8fafc; }
+        
+        /* 컨트롤 패널 */
+        .controls { display: flex; flex-direction: column; gap: 12px; margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        .control-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .control-label { font-size: 0.95rem; font-weight: bold; color: #334155; }
+        
+        /* 버튼 스타일 */
+        .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        .btn-option { padding: 8px 14px; border: 1px solid #cbd5e1; border-radius: 6px; background-color: #ffffff; color: #334155; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-option.active { background-color: #2563eb; color: #ffffff; border-color: #2563eb; }
+        
+        .btn-action { padding: 9px 14px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; color: white; font-size: 0.9rem; }
+        .btn-all { background-color: #8b5cf6; }
+        .btn-all:hover { background-color: #7c3aed; }
+        .btn-start { background-color: #22c55e; }
+        .btn-start:hover { background-color: #16a34a; }
+        .btn-pause { background-color: #eab308; }
+        .btn-pause:hover { background-color: #ca8a04; }
+        .btn-reset { background-color: #ef4444; }
+        .btn-reset:hover { background-color: #dc2626; }
+
+        /* 검류계 계측기 UI */
+        .galvanometer-box { width: 100%; height: 110px; background: #e2e8f0; border-radius: 8px; margin-bottom: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .galvanometer-svg { width: 150px; height: 80px; }
+
+        /* 그래프 영역 */
+        .chart-container { width: 100%; height: 260px; margin-top: 5px; }
+
+        /* 결과 테이블 */
+        .result-table { width: 100%; margin-top: 15px; border-collapse: collapse; text-align: center; font-size: 0.9rem; }
+        .result-table th, .result-table td { border: 1px solid #cbd5e1; padding: 8px; }
+        .result-table th { background-color: #f1f5f9; color: #334155; font-weight: bold; }
+        
+        .conclusion-box { margin-top: 15px; padding: 12px; background: #eff6ff; border-radius: 6px; border-left: 4px solid #3b82f6; font-size: 0.9rem; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+    <h1>전자기 유도 실험 시뮬레이터</h1>
+
+    <div class="container">
+        <!-- 좌측: 시뮬레이션 및 조작 버튼 -->
+        <div class="card">
+            <h2>실험 화면 (Visual 2D 시뮬레이션)</h2>
+            <canvas id="simCanvas" width="550" height="250"></canvas>
+            
+            <div class="controls">
+                <!-- 자석 개수 선택 버튼 -->
+                <div class="control-row">
+                    <span class="control-label">개별 자석 선택:</span>
+                    <div class="btn-group">
+                        <button class="btn-option active" onclick="selectMagnetCount(100)" id="m100">100개</button>
+                        <button class="btn-option" onclick="selectMagnetCount(300)" id="m300">300개</button>
+                        <button class="btn-option" onclick="selectMagnetCount(500)" id="m500">500개</button>
+                    </div>
+                </div>
+
+                <!-- 동작 컨트롤 버튼 -->
+                <div class="control-row">
+                    <span class="control-label">실험 조작:</span>
+                    <div class="btn-group">
+                        <button class="btn-action btn-all" onclick="runAllExperiments()">[한번에 전체 실행]</button>
+                        <button class="btn-action btn-start" onclick="startSim()">시작</button>
+                        <button class="btn-action btn-pause" onclick="pauseSim()">중지</button>
+                        <button class="btn-action btn-reset" onclick="clearAllData()">[그래프/데이터 초기화]</button>
+                    </div>
+                </div>
+
+                <div style="font-size: 0.85rem; color: #64748b; margin-top: 2px;">
+                    • 통제변인: 코일의 감은 수, 자석의 이동 속도<br>
+                    • 조작변인: 자석의 개수 (100개, 300개, 500개)
+                </div>
+            </div>
+        </div>
+
+        <!-- 우측: 검류계, 실시간 그래프 및 표 결과 -->
+        <div class="card">
+            <h2>결과 시각화 (검류계 & 실시간 통합 그래프)</h2>
+            
+            <!-- 검류계 바늘 -->
+            <div class="galvanometer-box">
+                <svg class="galvanometer-svg" viewBox="0 0 200 110">
+                    <path d="M 20 90 A 80 80 0 0 1 180 90" fill="none" stroke="#94a3b8" stroke-width="4"/>
+                    <line x1="100" y1="20" x2="100" y2="30" stroke="#0f172a" stroke-width="2"/>
+                    <text x="100" y="15" font-size="10" text-anchor="middle">0</text>
+                    <text x="25" y="105" font-size="10" text-anchor="middle">-V</text>
+                    <text x="175" y="105" font-size="10" text-anchor="middle">+V</text>
+                    <line id="needle" x1="100" y1="90" x2="100" y2="25" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>
+                    <circle cx="100" cy="90" r="5" fill="#0f172a"/>
+                </svg>
+                <div style="font-size: 0.82rem; font-weight: bold; color: #475569;">검류계 바늘 (전류 방향과 크기)</div>
+            </div>
+
+            <!-- 실시간 통합 그래프 -->
+            <div class="chart-container">
+                <canvas id="emfChart"></canvas>
+            </div>
+
+            <!-- 데이터 표 -->
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th>자석의 개수</th>
+                        <th>유도 기전력(V) 최댓값</th>
+                        <th>유도 기전력(V) 최솟값</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="color: #2563eb; font-weight: bold;">100개</td>
+                        <td id="max100">-</td>
+                        <td id="min100">-</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #d97706; font-weight: bold;">300개</td>
+                        <td id="max300">-</td>
+                        <td id="min300">-</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #dc2626; font-weight: bold;">500개</td>
+                        <td id="max500">-</td>
+                        <td id="min500">-</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="conclusion-box">
+                <strong>[자석의 개수]에 따라 유도 기전력이 어떻게 달라지는가?</strong><br>
+                - 자석의 개수가 증가할수록(자기장의 세기가 세질수록) 유도 기전력의 크기가 비례하여 증가한다.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const chartCtx = document.getElementById('emfChart').getContext('2d');
+
+        let magnetCount = 100;
+        let isRunning = false;
+        let animId = null;
+        let magnetY = 20;
+        const coilY = 125;
+        let timeIndex = 0;
+        let isAutoMode = false;
+        const autoList = [100, 300, 500];
+        let autoStep = 0;
+
+        // X축 시간 (0.00s ~ 0.60s)
+        const labels = [];
+        for (let t = 0; t <= 0.6; t += 0.01) {
+            labels.push(t.toFixed(2));
+        }
+
+        // Chart.js 그래프 설정
+        const emfChart = new Chart(chartCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: '100개', borderColor: '#2563eb', borderWidth: 2, data: Array(labels.length).fill(null), fill: false, tension: 0.4, pointRadius: 0 },
+                    { label: '300개', borderColor: '#d97706', borderWidth: 2, data: Array(labels.length).fill(null), fill: false, tension: 0.4, pointRadius: 0 },
+                    { label: '500개', borderColor: '#dc2626', borderWidth: 2, data: Array(labels.length).fill(null), fill: false, tension: 0.4, pointRadius: 0 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: '시간 (s)' } },
+                    y: { title: { display: true, text: '유도 기전력 (V)' }, min: -0.5, max: 0.5 }
+                },
+                animation: false
+            }
+        });
+
+        // 물리 수식
+        function calculateEMF(t, count) {
+            const t0 = 0.3;
+            const scale = (count / 100) * 0.082;
+            const diff = (t - t0) / 0.04;
+            return -scale * diff * Math.exp(-Math.pow(diff, 2) / 2);
+        }
+
+        // 개별 자석 선택
+        function selectMagnetCount(count) {
+            if (isRunning) return;
+            isAutoMode = false;
+            magnetCount = count;
+            document.querySelectorAll('.btn-option').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`m${count}`).classList.add('active');
+            resetPosition();
+        }
+
+        // 개별 시작
+        function startSim() {
+            if (isRunning) return;
+            isAutoMode = false;
+            isRunning = true;
+            animate();
+        }
+
+        // 한번에 전체 실행 버튼
+        function runAllExperiments() {
+            if (isRunning) return;
+            clearAllData();
+            isAutoMode = true;
+            autoStep = 0;
+            startNextAutoStep();
+        }
+
+        function startNextAutoStep() {
+            if (autoStep >= autoList.length) {
+                isAutoMode = false;
+                isRunning = false;
+                return;
+            }
+            magnetCount = autoList[autoStep];
+            document.querySelectorAll('.btn-option').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`m${magnetCount}`).classList.add('active');
+            
+            resetPosition();
+            isRunning = true;
+            animate();
+        }
+
+        // 중지 버튼
+        function pauseSim() {
+            isRunning = false;
+            isAutoMode = false;
+            if (animId) cancelAnimationFrame(animId);
+        }
+
+        // 위치 초기화
+        function resetPosition() {
+            pauseSim();
+            magnetY = 20;
+            timeIndex = 0;
+            updateNeedle(0);
+            drawScene(0);
+        }
+
+        // 그래프/데이터 완전 초기화 버튼
+        function clearAllData() {
+            resetPosition();
+            emfChart.data.datasets.forEach(ds => ds.data = Array(labels.length).fill(null));
+            emfChart.update();
+
+            document.getElementById('max100').innerText = '-';
+            document.getElementById('min100').innerText = '-';
+            document.getElementById('max300').innerText = '-';
+            document.getElementById('min300').innerText = '-';
+            document.getElementById('max500').innerText = '-';
+            document.getElementById('min500').innerText = '-';
+        }
+
+        // 검류계 바늘 업데이트
+        function updateNeedle(emf) {
+            const needle = document.getElementById('needle');
+            const angle = Math.max(-60, Math.min(60, emf * 140));
+            needle.setAttribute('transform', `rotate(${angle}, 100, 90)`);
+        }
+
+        // 2D Canvas 시각화
+        function drawScene(currentEMF) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const coilX = 230;
+
+            // 코일
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#d97706';
+            for (let i = 0; i < 6; i++) {
+                ctx.beginPath();
+                ctx.ellipse(coilX + 40, coilY + (i * 10) - 25, 38, 8, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // 자석
+            const mX = coilX + 40 - 20;
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(mX, magnetY, 40, 25);
+            ctx.fillStyle = '#2563eb';
+            ctx.fillRect(mX, magnetY + 25, 40, 25);
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText('N', mX + 16, magnetY + 17);
+            ctx.fillText('S', mX + 16, magnetY + 42);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 12px Malgun Gothic';
+            ctx.fillText(`[자석 ${magnetCount}개]`, mX - 10, magnetY - 8);
+
+            // 유도 전류 화살표
+            if (Math.abs(currentEMF) > 0.02) {
+                ctx.fillStyle = '#eab308';
+                ctx.strokeStyle = '#eab308';
+                ctx.lineWidth = 3;
+
+                const arrowX = coilX + 90;
+                const arrowY = coilY;
+
+                ctx.beginPath();
+                if (currentEMF > 0) {
+                    ctx.moveTo(arrowX, arrowY + 20);
+                    ctx.lineTo(arrowX, arrowY - 20);
+                    ctx.lineTo(arrowX - 5, arrowY - 10);
+                    ctx.stroke();
+                    ctx.font = 'bold 12px Malgun Gothic';
+                    ctx.fillText('▲ 유도 전류', arrowX + 8, arrowY + 5);
+                } else {
+                    ctx.moveTo(arrowX, arrowY - 20);
+                    ctx.lineTo(arrowX, arrowY + 20);
+                    ctx.lineTo(arrowX - 5, arrowY + 10);
+                    ctx.stroke();
+                    ctx.font = 'bold 12px Malgun Gothic';
+                    ctx.fillText('▼ 유도 전류', arrowX + 8, arrowY + 5);
+                }
+            }
+        }
+
+        // 애니메이션 루프
+        function animate() {
+            if (!isRunning) return;
+
+            const t = parseFloat(labels[timeIndex]);
+            const currentEMF = calculateEMF(t, magnetCount);
+
+            const datasetIndex = magnetCount === 100 ? 0 : (magnetCount === 300 ? 1 : 2);
+            emfChart.data.datasets[datasetIndex].data[timeIndex] = currentEMF;
+            emfChart.update();
+
+            magnetY += 3.2;
+            drawScene(currentEMF);
+            updateNeedle(currentEMF);
+
+            timeIndex++;
+
+            if (timeIndex >= labels.length) {
+                isRunning = false;
+
+                // 표 데이터 기록
+                const dataArr = emfChart.data.datasets[datasetIndex].data.filter(v => v !== null);
+                const maxVal = Math.max(...dataArr).toFixed(3);
+                const minVal = Math.min(...dataArr).toFixed(3);
+
+                if (magnetCount === 100) {
+                    document.getElementById('max100').innerText = maxVal;
+                    document.getElementById('min100').innerText = minVal;
+                } else if (magnetCount === 300) {
+                    document.getElementById('max300').innerText = maxVal;
+                    document.getElementById('min300').innerText = minVal;
+                } else if (magnetCount === 500) {
+                    document.getElementById('max500').innerText = maxVal;
+                    document.getElementById('min500').innerText = minVal;
+                }
+
+                // 한번에 전체 실행 모드일 경우 다음 자석으로 연속 진행
+                if (isAutoMode) {
+                    autoStep++;
+                    setTimeout(() => {
+                        startNextAutoStep();
+                    }, 500);
+                }
+            } else {
+                animId = requestAnimationFrame(animate);
+            }
+        }
+
+        drawScene(0);
+    </script>
+</body>
+</html>
